@@ -160,11 +160,15 @@ def _shuffle(
 
 def _convert_to_order(client, X, chunksizes, order, n_features, dtype):
     X_ddh = DistributedDataHandler.create(data=X, client=client)
+    # We need copy=True here. Dask (apparently) isn't always able to
+    # preserve the memory order of the array. Going through Array.from_delayed
+    # will call finalize() on the computed result, which might call ndarray.copy()
+    # which will drop the memory order.
+    # https://github.com/dask/dask/blob/b1025f7192f746c77d07a13945223887a3780f16/dask/array/core.py#L1285
     X_converted = [
-        client.submit(cp.array, X_part, copy=None, order=order, workers=[w])
+        client.submit(cp.array, X_part, copy=True, order=order, workers=[w])
         for idx, (w, X_part) in enumerate(X_ddh.gpu_futures)
     ]
-
     X_dela = _create_delayed(X_converted, dtype, chunksizes, n_features)
 
     return da.concatenate(X_dela, axis=0)
